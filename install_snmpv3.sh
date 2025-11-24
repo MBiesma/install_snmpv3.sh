@@ -1,77 +1,187 @@
 #!/bin/bash
+#
+# install_snmpv3.sh
+# Version 1.10 (2025-11-24)
+# Unified installer for SNMPv3 + custom PRTG scripts
+# Supports: Ubuntu, Debian, RHEL, CentOS, Rocky, AlmaLinux, Oracle Linux
+#
+# Features:
+# - Auto OS detection
+# - Automatically installs wget, SNMP packages, dependencies
+# - Downloads PRTG monitoring scripts
+# - Creates SNMPv3 user
+# - Copies existing /etc/snmp/snmpd.conf with timestamp before overwriting
+# - GitHub-grade error handling
+#
 
-# Version 1.1
+set -euo pipefail
 
 USERNAME="svcPRTGsnmp"
+PRTG_DIR="/var/prtg/scripts"
+SNMP_CONF="/etc/snmp/snmpd.conf"
 
-# Do NOT edit below here!
-
-
-# Define color variables
 GREEN='\e[32m'
 RED='\e[31m'
-NC='\e[0m' # No Color (reset to default)
+NC='\e[0m'
 
-# Define the file path
-FILE_PATH="/etc/snmp/snmpd.conf"
+###############################################
+# FUNCTION: Safe script downloader
+###############################################
+download_script() {
+    local url="$1"
+    local dest="$2"
 
-# Check if the file exists
-if [ -f "$FILE_PATH" ]; then
-   echo -e "\n${RED}  !!! File $FILE_PATH already exists. Exiting script. !!!\n${NC}"
-   exit 1
+    echo -e "${GREEN}Downloading: $url${NC}"
+
+    if ! wget -q -O "$dest" "$url"; then
+        echo -e "${RED}[FATAL] Failed to download: $url${NC}"
+        exit 1
+    fi
+
+    chmod +x "$dest"
+}
+
+###############################################
+# DETECT OPERATING SYSTEM
+###############################################
+echo -e "${GREEN}=== Detecting Operating System ===${NC}"
+
+if grep -qi "ubuntu\|debian" /etc/os-release; then
+    OS="ubuntu"
+    echo -e "${GREEN}Ubuntu/Debian detected${NC}"
+
+elif grep -qi "rhel\|centos\|almalinux\|rocky\|oracle\|ol" /etc/os-release; then
+    OS="redhat"
+    echo -e "${GREEN}RHEL/CentOS/Rocky/Alma/Oracle Linux detected${NC}"
+
 else
-   echo -e "\n${GREEN}  ... File $FILE_PATH does not exist. Continuing script.${NC}"
+    echo -e "${RED}Unsupported OS — exiting.${NC}"
+    exit 1
 fi
 
-#   echo -e "${GREEN}Enter IP adres from PRTG probe : ${NC}"
-#read prtgprobeip
-#   echo -e "${GREEN}  ... IP adres from PRTG probe saved${NC}"
+###############################################
+# PREPARE PRTG DIRECTORY
+###############################################
+echo -e "${GREEN}Creating ${PRTG_DIR} (if not exists)${NC}"
+mkdir -p "$PRTG_DIR"
 
-   echo -e "\n${GREEN}  ... Run apt clean${NC}"
-apt clean
+###############################################
+# CHECK / INSTALL WGET
+###############################################
+echo -e "${GREEN}Checking if wget is installed...${NC}"
 
-   echo -e "\n${GREEN}  ... Run apt update${NC}"
-apt update
+if ! command -v wget >/dev/null 2>&1; then
+    echo -e "${GREEN}Installing wget...${NC}"
 
-   echo -e "\n${GREEN} ... Run apt autoremove${NC}"
-apt autoremove -y
+    if [ "$OS" = "ubuntu" ]; then
+        apt update -y
+        apt install -y wget
+    else
+        (command -v dnf >/dev/null 2>&1 && dnf install -y wget) || yum install -y wget
+    fi
+else
+    echo -e "${GREEN}wget is already installed.${NC}"
+fi
 
-   echo -e "\n${GREEN} ... Install snmp snmpd libsnmp-dev with apt${NC}"
-apt install snmp snmpd libsnmp-dev -y
+###############################################
+# DOWNLOAD PRTG SCRIPTS
+###############################################
+echo -e "${GREEN}=== Downloading PRTG Monitoring Scripts ===${NC}"
 
-   echo -e "\n${GREEN}  ... Enable SNMPD to Start on Boot${NC}"
-systemctl enable snmpd
+download_script "https://raw.githubusercontent.com/MBiesma/prtg_service_cron.sh/refs/heads/main/prtg_service_cron.sh" \
+                "$PRTG_DIR/prtg_service_cron.sh"
 
-   echo -e "\n${GREEN}  ... Stopping SNMPD to use the net-snmp-config command${NC}"
-systemctl stop snmpd
+download_script "https://raw.githubusercontent.com/MBiesma/prtg_service_sshd.sh/refs/heads/main/prtg_service_sshd.sh" \
+                "$PRTG_DIR/prtg_service_sshd.sh"
 
-   echo -e "\n${GREEN}  ... Edit SNMPD listening address from 127.0.0.1 to 0.0.0.0${NC}"
-sed -i 's/127.0.0.1/0.0.0.0/g' /etc/snmp/snmpd.conf
+download_script "https://raw.githubusercontent.com/MBiesma/prtg_service_talend-remote-engine.sh/refs/heads/main/prtg_service_talend-remote-engine.sh" \
+                "$PRTG_DIR/prtg_service_talend-remote-engine.sh"
 
+download_script "https://raw.githubusercontent.com/MBiesma/prtg_service_TALEND-RUNTIME.sh/refs/heads/main/prtg_service_TALEND-RUNTIME.sh" \
+                "$PRTG_DIR/prtg_service_TALEND-RUNTIME.sh"
 
-# Generate a random password
+# UNIVERSAL version for all OS
+download_script "https://raw.githubusercontent.com/MBiesma/prtg_apt_packages_upgradable.sh/refs/heads/main/prtg_os_packages_upgradable.sh" \
+                "$PRTG_DIR/prtg_os_packages_upgradable.sh"
+
+###############################################
+# HANDLE EXISTING SNMPD.CONF
+###############################################
+if [ -f "$SNMP_CONF" ]; then
+    TS=$(date +%Y%m%d%H%M%S)
+    BACKUP="${SNMP_CONF}-${TS}"
+
+    echo -e "${RED}SNMP configuration file already exists.${NC}"
+    echo -e "Copying file to backup: $BACKUP"
+
+    cp "$SNMP_CONF" "$BACKUP"
+else
+    echo -e "${GREEN}No existing SNMP configuration found.${NC}"
+fi
+
+###############################################
+# INSTALL SNMP PACKAGES
+###############################################
+echo -e "${GREEN}=== Installing SNMP Packages ===${NC}"
+
+if [ "$OS" = "ubuntu" ]; then
+    apt update -y
+    apt install -y snmp snmpd libsnmp-dev
+else
+    (command -v dnf >/dev/null 2>&1 && dnf install -y net-snmp net-snmp-utils net-snmp-devel) \
+        || yum install -y net-snmp net-snmp-utils net-snmp-devel
+fi
+
+###############################################
+# CONFIGURE SNMP
+###############################################
+echo -e "${GREEN}=== Configuring SNMP ===${NC}"
+
+systemctl enable snmpd || true
+systemctl stop snmpd || true
+
+if [ "$OS" = "ubuntu" ]; then
+    sed -i 's/127.0.0.1/0.0.0.0/' "$SNMP_CONF"
+else
+    sed -i 's/^agentAddress.*/agentAddress udp:161,udp6:[::1]:161/' "$SNMP_CONF"
+fi
+
+###############################################
+# CREATE SNMPv3 USER
+###############################################
 SNMPPASSWORD=$(head -c 16 /dev/urandom | base64 | tr -dc 'a-zA-Z1-9')
 
-   echo -e "\n${GREEN}  ... Create SNMP v3 user and add to configuration files${NC}"
-net-snmp-config --create-snmpv3-user -ro -A $SNMPPASSWORD -X $SNMPPASSWORD -a SHA -x AES $USERNAME
+echo -e "${GREEN}Creating SNMPv3 user${NC}"
 
-   echo -e "\n${GREEN}  ... Add disk monitoring for / and /boot to /etc/snmp/snmpd.conf ${NC}"
-grep -q 'disk /' '/etc/snmp/snmpd.conf' || echo "disk /" >> /etc/snmp/snmpd.conf
-grep -q 'disk /boot' '/etc/snmp/snmpd.conf' || echo "disk /boot" >> /etc/snmp/snmpd.conf
+if [ "$OS" = "ubuntu" ]; then
+    net-snmp-config --create-snmpv3-user -ro -A "$SNMPPASSWORD" -X "$SNMPPASSWORD" -a SHA -x AES "$USERNAME"
+else
+    net-snmp-create-v3-user -ro -A "$SNMPPASSWORD" -X "$SNMPPASSWORD" -a SHA -x AES "$USERNAME"
+fi
 
-   echo -e "\n${GREEN}  ... Starting SNMPD ${NC}"
+###############################################
+# APPEND MONITORING ENTRIES
+###############################################
+echo "disk /" >> "$SNMP_CONF"
+echo "disk /boot" >> "$SNMP_CONF"
+
+echo "exec prtg_os_packages_upgradable $PRTG_DIR/prtg_os_packages_upgradable.sh" >> "$SNMP_CONF"
+
+echo "exec prtg_service_sshd $PRTG_DIR/prtg_service_sshd.sh" >> "$SNMP_CONF"
+echo "exec prtg_service_cron $PRTG_DIR/prtg_service_cron.sh" >> "$SNMP_CONF"
+echo "exec prtg_service_talend-remote-engine $PRTG_DIR/prtg_service_talend-remote-engine.sh" >> "$SNMP_CONF"
+echo "exec prtg_service_TALEND-RUNTIME $PRTG_DIR/prtg_service_TALEND-RUNTIME.sh" >> "$SNMP_CONF"
+
 systemctl start snmpd
-systemctl status snmpd | head -3 | tail +3
 
-
-# Display the username andpassword
-   echo -e "\n${GREEN}  .........................................................................  ${NC}"
-     echo -e "${GREEN}  ...       ${NC}"
-     echo -e "${GREEN}  ...            Your username is:${NC} ${RED}$USERNAME${NC}"
-     echo -e "${GREEN}  ...            Your password is:${NC} ${RED}$SNMPPASSWORD${NC}"
-     echo -e "${GREEN}  ...      Your Encryption Key is:${NC} ${RED}$SNMPPASSWORD${NC}"
-     echo -e "${GREEN}  ...       Authentication Method:${NC} ${RED}SHA${NC}"
-     echo -e "${GREEN}  ...             Encryption Type:${NC} ${RED}AES${NC}"
-     echo -e "${GREEN}  ...  ${NC}"
-     echo -e "${GREEN}  .........................................................................  ${NC}"
-   echo ""
+###############################################
+# OUTPUT SUMMARY
+###############################################
+echo -e "${GREEN}==============================================================${NC}"
+echo -e "   SNMP v3 Username:      ${RED}$USERNAME${NC}"
+echo -e "   SNMP v3 Password:      ${RED}$SNMPPASSWORD${NC}"
+echo -e "   Encryption Key:        ${RED}$SNMPPASSWORD${NC}"
+echo -e "   Authentication:        SHA"
+echo -e "   Encryption:            AES"
+echo -e "${GREEN}==============================================================${NC}"
+echo ""
