@@ -174,7 +174,7 @@ echo "exec prtg_service_sshd $PRTG_DIR/prtg_service_sshd.sh" >> "$SNMP_CONF"
 echo "exec prtg_service_cron $PRTG_DIR/prtg_service_cron.sh" >> "$SNMP_CONF"
 echo "exec prtg_service_talend-remote-engine $PRTG_DIR/prtg_service_talend-remote-engine.sh" >> "$SNMP_CONF"
 echo "exec prtg_service_TALEND-RUNTIME $PRTG_DIR/prtg_service_TALEND-RUNTIME.sh" >> "$SNMP_CONF"
-echo "exec prtg_service_ActiveMQ $PRTG_DIR/prtg_service_ActiveMQ" >> "$SNMP_CONF"
+echo "exec prtg_service_ActiveMQ $PRTG_DIR/prtg_service_ActiveMQ.sh" >> "$SNMP_CONF"
 
 systemctl start snmpd
 
