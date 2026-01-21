@@ -100,6 +100,9 @@ download_script "https://raw.githubusercontent.com/MBiesma/prtg_service_talend-r
 download_script "https://raw.githubusercontent.com/MBiesma/prtg_service_TALEND-RUNTIME.sh/refs/heads/main/prtg_service_TALEND-RUNTIME.sh" \
                 "$PRTG_DIR/prtg_service_TALEND-RUNTIME.sh"
 
+download_script "https://raw.githubusercontent.com/MBiesma/prtg_service_ActiveMQ.sh/refs/heads/main/prtg_service_ActiveMQ.sh" \
+                "$PRTG_DIR/prtg_service_ActiveMQ.sh"
+
 # UNIVERSAL version for all OS
 download_script "https://raw.githubusercontent.com/MBiesma/prtg_apt_packages_upgradable.sh/refs/heads/main/prtg_os_packages_upgradable.sh" \
                 "$PRTG_DIR/prtg_os_packages_upgradable.sh"
@@ -171,6 +174,7 @@ echo "exec prtg_service_sshd $PRTG_DIR/prtg_service_sshd.sh" >> "$SNMP_CONF"
 echo "exec prtg_service_cron $PRTG_DIR/prtg_service_cron.sh" >> "$SNMP_CONF"
 echo "exec prtg_service_talend-remote-engine $PRTG_DIR/prtg_service_talend-remote-engine.sh" >> "$SNMP_CONF"
 echo "exec prtg_service_TALEND-RUNTIME $PRTG_DIR/prtg_service_TALEND-RUNTIME.sh" >> "$SNMP_CONF"
+echo "exec prtg_service_ActiveMQ $PRTG_DIR/prtg_service_ActiveMQ" >> "$SNMP_CONF"
 
 systemctl start snmpd
 
